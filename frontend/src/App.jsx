@@ -190,7 +190,7 @@ const Suggestions = ({ documentText, onSuggestionClick, language }) => {
             const fetchSuggestions = async () => {
                 setIsLoading(true);
                 try {
-                    const response = await fetch('http://127.0.0.1:8000/generate-suggestions', {
+                    const response = await fetch('import.meta.env.VITE_BACKEND_URL/generate-suggestions', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ document: documentText, language }),
@@ -312,7 +312,7 @@ const Chatbot = ({ documentText, language, initialMessage }) => {
         setIsChatLoading(true);
 
         try {
-            const response = await fetch('http://127.0.0.1:8000/chat', {
+            const response = await fetch('import.meta.env.VITE_BACKEND_URL/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -467,7 +467,7 @@ export default function App() {
                 reader.onerror = error => reject(error);
             });
             
-            const ocrResponse = await fetch('http://127.0.0.1:8000/extract-text-from-image', {
+            const ocrResponse = await fetch('import.meta.env.VITE_BACKEND_URL/extract-text-from-image', {
                  method: 'POST',
                  headers: { 'Content-Type': 'application/json' },
                  body: JSON.stringify({ image_data: base64Data }),
@@ -490,7 +490,7 @@ export default function App() {
     }
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/analyze-structured', {
+      const response = await fetch('import.meta.env.VITE_BACKEND_URL/analyze-structured', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ document: textToAnalyze, question: 'Summarize the key risks, obligations, and benefits, and provide a risk score.', language }),
@@ -521,7 +521,7 @@ export default function App() {
                     Key Benefits are: ${dashboardData.benefits.join('; ')}.
                 `;
 
-                const response = await fetch('http://127.0.0.1:8000/generate-audio-summary', {
+                const response = await fetch('import.meta.env.VITE_BACKEND_URL/generate-audio-summary', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: summaryText, language: language }),
@@ -588,7 +588,7 @@ export default function App() {
         if (!doc1.text || !doc2.text) { setError('Please upload both documents for comparison.'); return; }
         setIsLoading(true); resetState();
         try {
-            const response = await fetch('http://127.0.0.1:8000/compare-documents', {
+            const response = await fetch('import.meta.env.VITE_BACKEND_URL/compare-documents', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ document1: doc1.text, document2: doc2.text, language }),
