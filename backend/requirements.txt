@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+google-cloud-aiplatform
+requests
+beautifulsoup4
+pydantic
