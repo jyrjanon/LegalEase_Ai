@@ -5,9 +5,11 @@ import json
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
+from typing import List, Optional
 from google.cloud import texttospeech
+from fastapi.responses import StreamingResponse
+import asyncio
 
 from vertexai.generative_models import GenerativeModel, Part, Image
 
@@ -22,7 +24,7 @@ class UrlRequest(BaseModel):
     url: str
 
 class ImageRequest(BaseModel):
-    image_data: str # Base64 encoded image string
+    image_data: str 
 
 class SuggestionRequest(BaseModel):
     document: str
@@ -64,12 +66,8 @@ PROJECT_ID = "genai-471305"
 LOCATION = "us-central1"
 vertexai.init(project=PROJECT_ID, location=LOCATION)
 
-# Initialize TTS client
 tts_client = texttospeech.TextToSpeechClient()
-
-# Use specific models for specific tasks
-vision_model = GenerativeModel("gemini-2.5-pro") # For image-based tasks
-text_model = GenerativeModel("gemini-2.5-flash") # For text and chat tasks
+text_model = GenerativeModel("gemini-2.5-flash")
 
 # --- API Endpoints ---
 
@@ -77,42 +75,37 @@ text_model = GenerativeModel("gemini-2.5-flash") # For text and chat tasks
 def read_root():
     return {"message": "LegalEase AI Backend is running"}
 
-@app.post("/analyze-structured")
-async def analyze_document_structured(request: AnalysisRequest):
-    """Analyzes the document to extract structured data."""
-    try:
-        prompt = f"""
-        Analyze the following legal document. The user's query is: "{request.question}".
-        The desired output language is {request.language}.
-
-        Based on the document, provide a response in a valid JSON format with the following structure:
-        {{
-          "riskScore": <an integer between 0 and 100, where 100 is highest risk>,
-          "obligations": ["<a bullet point summarizing an obligation>", "..."],
-          "risks": ["<a bullet point summarizing a risk>", "..."],
-          "benefits": ["<a bullet point summarizing a benefit>", "..."]
-        }}
-
-        Do not include any text, explanations, or markdown formatting outside of the JSON object.
-
-        Document:
-        ---
-        {request.document}
-        ---
-        """
-        response = text_model.generate_content(prompt)
-        json_response_text = response.text.strip().replace("```json", "").replace("```", "")
-        
+@app.post("/analyze-structured-stream")
+async def analyze_document_stream(request: AnalysisRequest):
+    """Analyzes the document and streams the structured data back."""
+    async def generate():
         try:
-            data = json.loads(json_response_text)
-            return data
-        except json.JSONDecodeError:
-            print("Failed to decode JSON from AI response:", json_response_text)
-            raise HTTPException(status_code=500, detail="AI returned an invalid data format.")
+            prompt = f"""
+            Analyze the following legal document based on the user's query: "{request.question}".
+            The response must be in {request.language}.
+            Provide a response in a single, valid JSON format with this exact structure:
+            {{
+              "riskScore": <integer from 0 to 100>,
+              "obligations": ["<summary of an obligation>", "..."],
+              "risks": ["<summary of a risk>", "..."],
+              "benefits": ["<summary of a benefit>", "..."]
+            }}
+            Do not include any text or markdown formatting outside of the JSON object.
 
-    except Exception as e:
-        print(f"An error occurred with the Vertex AI API: {e}")
-        raise HTTPException(status_code=500, detail=f"Error analyzing document: {e}")
+            Document:
+            ---
+            {request.document}
+            ---
+            """
+            stream = text_model.generate_content(prompt, stream=True)
+            for chunk in stream:
+                yield chunk.text
+                await asyncio.sleep(0.01)
+        except Exception as e:
+            print(f"Streaming analysis error: {e}")
+            yield json.dumps({"error": "Failed to stream analysis."})
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.post("/compare-documents")
 async def compare_documents(request: ComparisonRequest):
@@ -121,53 +114,29 @@ async def compare_documents(request: ComparisonRequest):
         prompt = f"""
         Act as a legal analyst. Compare Document 1 (Original) and Document 2 (Revised).
         Identify the key additions, removals, and modifications in Document 2.
-        For each modification, explain the potential legal implication of the change.
-        The desired output language is {request.language}.
-
-        Provide a response in a valid JSON format with the following structure:
+        For each, explain the legal implication. The language should be {request.language}.
+        Provide a response in a valid JSON format:
         {{
-          "added": [
-            {{ "clause": "<The full text of the added clause>", "implication": "<The legal implication of this addition>" }}
-          ],
-          "removed": [
-            {{ "clause": "<The full text of the removed clause>", "implication": "<The legal implication of this removal>" }}
-          ],
-          "modified": [
-            {{ "original_clause": "<The text of the clause in Document 1>", "revised_clause": "<The corresponding text in Document 2>", "implication": "<The legal implication of this modification>" }}
-          ]
+          "added": [{{ "clause": "<added clause>", "implication": "<implication>" }}],
+          "removed": [{{ "clause": "<removed clause>", "implication": "<implication>" }}],
+          "modified": [{{ "original_clause": "<original>", "revised_clause": "<revised>", "implication": "<implication>" }}]
         }}
         
-        Do not include any text outside of the JSON object.
-
-        Document 1 (Original):
-        ---
-        {request.document1}
-        ---
-
-        Document 2 (Revised):
-        ---
-        {request.document2}
-        ---
+        Document 1 (Original): --- {request.document1} ---
+        Document 2 (Revised): --- {request.document2} ---
         """
         response = text_model.generate_content(prompt)
         json_response_text = response.text.strip().replace("```json", "").replace("```", "")
-        try:
-            data = json.loads(json_response_text)
-            return data
-        except json.JSONDecodeError:
-            print("Failed to decode JSON from AI response for comparison:", json_response_text)
-            raise HTTPException(status_code=500, detail="AI returned an invalid comparison format.")
-
+        return json.loads(json_response_text)
     except Exception as e:
-        print(f"An error occurred during comparison: {e}")
-        raise HTTPException(status_code=500, detail=f"Error comparing documents: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/fetch-text-from-url")
 async def fetch_text_from_url(request: UrlRequest):
-    """Fetches and extracts the main text content from a given URL."""
+    """Fetches and extracts text content from a URL."""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+        headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(request.url, headers=headers, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -180,129 +149,102 @@ async def fetch_text_from_url(request: UrlRequest):
         return {"text": cleaned_text}
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch URL: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing URL content: {e}")
 
 @app.post("/extract-text-from-image")
 async def extract_text_from_image(request: ImageRequest):
-    """Extracts text from a base64 encoded image using OCR."""
+    """Extracts text from a base64 encoded image."""
     try:
         image_bytes = base64.b64decode(request.image_data)
-        
-        mime_type = "image/jpeg"
-        if image_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
-            mime_type = "image/png"
-
-        image_part = Part.from_data(data=image_bytes, mime_type=mime_type)
+        image_part = Part.from_data(data=image_bytes, mime_type="image/png")
         prompt_parts = [image_part, "Extract all text from this image. Only return the extracted text."]
-        
-        response = vision_model.generate_content(prompt_parts)
+        model = GenerativeModel("gemini-2.5-pro")
+        response = model.generate_content(prompt_parts)
         return {"text": response.text}
     except Exception as e:
-        print(f"An error occurred with image processing: {e}")
-        raise HTTPException(status_code=500, detail=f"Error extracting text from image: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/generate-suggestions")
 async def generate_suggestions(request: SuggestionRequest):
-    """Generates follow-up questions based on the document."""
+    """Generates follow-up questions."""
     try:
         prompt = f"""
-        Based on the following legal document, generate 3 concise, insightful follow-up questions a user might ask.
-        The output language should be {request.language}.
-        Return the questions in a valid JSON format, like this: {{"suggestions": ["question 1", "question 2", "question 3"]}}.
-        Do not include any text outside the JSON object.
-
-        Document:
-        ---
-        {request.document}
-        ---
+        Based on the legal document, generate 3 concise follow-up questions a user might ask.
+        The language should be {request.language}.
+        Return a valid JSON: {{"suggestions": ["question 1", "question 2", "question 3"]}}.
+        
+        Document: --- {request.document} ---
         """
         response = text_model.generate_content(prompt)
         json_response_text = response.text.strip().replace("```json", "").replace("```", "")
-        try:
-            data = json.loads(json_response_text)
-            return data
-        except json.JSONDecodeError:
-            print("Failed to decode JSON from AI response for suggestions:", json_response_text)
-            raise HTTPException(status_code=500, detail="AI returned an invalid data format for suggestions.")
+        return json.loads(json_response_text)
     except Exception as e:
-        print(f"An error occurred generating suggestions: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate suggestions.")
 
-@app.post("/chat")
-async def chat_with_document(request: ChatRequest):
-    """Handles conversational chat with the document as context."""
-    try:
-        system_prompt = (
-            "You are an expert AI legal assistant integrated into a tool called LegalEase. "
-            "Your primary function is to provide advice, detailed explanations, and assistance based *exclusively* on the legal document provided by the user. "
-            f"All your responses must be in {request.language}. "
-            "Here are your rules:\n"
-            "1. **Anchor all answers to the document:** When the user asks a question, first find the relevant clause or section in the document to base your answer on. If possible, quote the key part of the clause and then explain it in simple terms.\n"
-            "2. **Be an advisor, not just an explainer:** Do not just define terms. Explain what the clauses *mean* for the user. For example, if you see a liability clause, explain what the user is responsible for.\n"
-            "3. **Stay strictly on topic:** The user's document is your entire world. If a user asks a question that cannot be answered from the document's content (e.g., 'What's the weather like?' or 'What is the capital of France?'), you must politely decline and steer the conversation back to the document. A good response would be, 'I can only provide assistance regarding the legal document you've uploaded. How can I help you with it?'\n"
-            "4. **Use the conversation history:** Pay attention to previous questions to understand the context of the user's current query."
-        )
+@app.post("/chat-stream")
+async def chat_with_document_stream(request: ChatRequest):
+    """Handles conversational chat with a streaming response."""
+    async def generate_chat_response():
+        try:
+            system_prompt = (
+                 "You are an expert AI legal assistant, LegalEase. Your role is to provide advice and explanations based *exclusively* on the provided legal document. "
+                f"All responses must be in {request.language}. "
+                "Rules:\n"
+                "1. **Anchor answers to the document:** Base your answers on the provided text. Quote key parts and explain them simply.\n"
+                "2. **Be an advisor:** Explain what clauses mean for the user, not just what they are.\n"
+                "3. **Stay on topic:** If a question is unrelated to the document, politely decline and steer back to it. Example: 'I can only help with the document you've provided. How can I assist with it?'\n"
+                "4. **Use conversation history:** Understand the context of the user's current query from past messages."
+            )
 
-        full_prompt_text = system_prompt + "\n\nLEGAL DOCUMENT:\n---\n" + request.document + "\n---\n\nCONVERSATION HISTORY:\n"
-        for msg in request.messages:
-            role = "User" if msg.role == "user" else "Assistant"
-            full_prompt_text += f"{role}: {msg.content}\n"
-        full_prompt_text += "Assistant:"
-        
-        response = text_model.generate_content(full_prompt_text)
-        
-        return {"response": response.text}
+            full_prompt_text = system_prompt + "\n\nLEGAL DOCUMENT:\n---\n" + request.document + "\n---\n\nCONVERSATION HISTORY:\n"
+            for msg in request.messages:
+                role = "User" if msg.role == "user" else "Assistant"
+                full_prompt_text += f"{role}: {msg.content}\n"
+            full_prompt_text += "Assistant:"
+            
+            stream = text_model.generate_content(full_prompt_text, stream=True)
+            
+            for chunk in stream:
+                yield chunk.text
+                await asyncio.sleep(0.01)
 
-    except Exception as e:
-        print(f"An error occurred during chat: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get chat response.")
+        except Exception as e:
+            print(f"Chat streaming error: {e}")
+            yield "Sorry, I encountered an error. Please try again."
+
+    return StreamingResponse(generate_chat_response(), media_type="text/event-stream")
 
 
 @app.post("/generate-audio-summary")
 async def generate_audio_summary(request: AudioRequest):
-    """Generates an audio summary of the provided text using Text-to-Speech."""
+    """Generates an audio summary using Text-to-Speech."""
     try:
         language_code_map = {
             "English": "en-US", "Hindi": "hi-IN", "Gujarati": "gu-IN",
             "Kannada": "kn-IN", "Marathi": "mr-IN", "Tamil": "ta-IN", "Telugu": "te-IN",
         }
         
-        # Maps languages to specific, high-quality WaveNet voices for clarity
         voice_name_map = {
-            "English": "en-US-Studio-O",
-            "Hindi": "hi-IN-Wavenet-D",
-            "Gujarati": "gu-IN-Wavenet-A",
-            "Kannada": "kn-IN-Wavenet-A", # Specific high-quality voice for Kannada
-            "Marathi": "mr-IN-Wavenet-A",
-            "Tamil": "ta-IN-Wavenet-A",
-            "Telugu": "te-IN-Wavenet-A",
+            "English": "en-US-Studio-O", "Hindi": "hi-IN-Wavenet-D",
+            "Gujarati": "gu-IN-Wavenet-A", "Kannada": "kn-IN-Wavenet-A",
+            "Marathi": "mr-IN-Wavenet-A", "Tamil": "ta-IN-Wavenet-A", "Telugu": "te-IN-Wavenet-A",
         }
 
         language_code = language_code_map.get(request.language, "en-US")
         voice_name = voice_name_map.get(request.language, "en-US-Studio-O")
 
         synthesis_input = texttospeech.SynthesisInput(text=request.text)
-        
-        voice = texttospeech.VoiceSelectionParams(
-            language_code=language_code, name=voice_name
-        )
-        
+        voice = texttospeech.VoiceSelectionParams(language_code=language_code, name=voice_name)
         audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.MP3,
-            speaking_rate=0.9 # Slower speaking rate (0.9 is 10% slower)
+            speaking_rate=0.9
         )
         
-        response = tts_client.synthesize_speech(
-            input=synthesis_input, voice=voice, audio_config=audio_config
-        )
-        
+        response = tts_client.synthesize_speech(input=synthesis_input, voice=voice, audio_config=audio_config)
         audio_content_b64 = base64.b64encode(response.audio_content).decode('utf-8')
         
         return {"audio_content": audio_content_b64}
         
     except Exception as e:
-        print(f"An error occurred with Text-to-Speech API: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate audio summary.")
+        raise HTTPException(status_code=500, detail=str(e))
 
