@@ -263,18 +263,29 @@ const Chatbot = ({ documentText, language, initialMessage }) => {
         }
     }, [messages, isChatLoading]);
 
-    useEffect(() => {
+    const handleMicClick = () => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
-            console.warn("Speech recognition not supported in this browser.");
+            alert("Sorry, your browser does not support speech recognition.");
             return;
         }
+
+        if (recognitionRef.current && isRecording) {
+            recognitionRef.current.stop();
+            return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognitionRef.current = recognition;
         
-        recognitionRef.current = new SpeechRecognition();
-        const recognition = recognitionRef.current;
-        recognition.continuous = false;
+        recognition.lang = languageCodeMap[language] || 'en-US';
+        recognition.continuous = true; // Keep listening
         recognition.interimResults = true;
-        
+
+        recognition.onstart = () => {
+            setIsRecording(true);
+        };
+
         recognition.onresult = (event) => {
             const transcript = Array.from(event.results)
                 .map(result => result[0])
@@ -282,25 +293,22 @@ const Chatbot = ({ documentText, language, initialMessage }) => {
                 .join('');
             setUserInput(transcript);
         };
-
+        
         recognition.onend = () => {
             setIsRecording(false);
+            recognitionRef.current = null;
         };
 
         recognition.onerror = (event) => {
             console.error("Speech recognition error:", event.error);
+            if (event.error === 'not-allowed') {
+                alert("Microphone access was denied. Please allow microphone access in your browser settings.");
+            }
             setIsRecording(false);
+            recognitionRef.current = null;
         };
-    }, []);
-
-    const handleMicClick = () => {
-        if (isRecording) {
-            recognitionRef.current.stop();
-        } else {
-            recognitionRef.current.lang = languageCodeMap[language] || 'en-US';
-            recognitionRef.current.start();
-            setIsRecording(true);
-        }
+        
+        recognition.start();
     };
 
     const handleSendMessage = async (messageToSend) => {
@@ -365,7 +373,7 @@ const Chatbot = ({ documentText, language, initialMessage }) => {
                 </button>
             </div>
 
-            <div className={`fixed bottom-0 right-0 md:bottom-5 md:right-5 z-50 w-full max-w-full md:max-w-md h-[80vh] md:h-[70vh] bg-white dark:bg-gray-800 rounded-none md:rounded-2xl shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-full'}`}>
+            <div className={`fixed bottom-0 right-0 md:bottom-5 md:right-5 z-50 w-full max-w-full md:max-w-md h-[80vh] md:h-[70vh] bg-white dark:bg-gray-800 rounded-none md:rounded-2xl shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-[105%]'}`}>
                 <header className="flex items-center justify-between p-4 border-b dark:border-gray-700">
                     <h3 className="text-xl font-bold">AI Assistant</h3>
                     <button onClick={() => setIsOpen(false)} className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
@@ -408,6 +416,235 @@ const Chatbot = ({ documentText, language, initialMessage }) => {
         </>
     );
 };
+
+// --- LOADING OVERLAY COMPONENT ---
+const LoadingOverlay = () => {
+    const [loadingText, setLoadingText] = useState("Analyzing your document...");
+
+    useEffect(() => {
+        const messages = [
+            "Demystifying complex clauses...",
+            "Checking for risks and obligations...",
+            "Getting things ready...",
+            "Finalizing your summary..."
+        ];
+        let currentIndex = 0;
+        const intervalId = setInterval(() => {
+            currentIndex = (currentIndex + 1) % messages.length;
+            setLoadingText(messages[currentIndex]);
+        }, 2500);
+
+        return () => clearInterval(intervalId);
+    }, []);
+
+    return (
+        <div className="absolute inset-0 bg-gray-500/30 dark:bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center rounded-2xl z-10">
+            <div className="w-16 h-16 border-4 border-dashed rounded-full animate-[spin-slow_2s_linear_infinite] border-blue-400"></div>
+            <p className="mt-4 text-xl font-semibold text-white">{loadingText}</p>
+        </div>
+    );
+};
+
+
+// --- Refactored Components (moved outside App) ---
+const InputSection = ({ 
+    activeTab, setActiveTab, documentText, setDocumentText, language, setLanguage, 
+    isLoading, error, setError, uploadedImageFile, setUploadedImageFile, uploadedImageSrc, 
+    setUploadedImageSrc, handleAnalysis, resetState
+}) => {
+    const [url, setUrl] = useState('');
+    const [isFetchingUrl, setIsFetchingUrl] = useState(false);
+    const [doc1, setDoc1] = useState({ name: '', text: '' });
+    const [doc2, setDoc2] = useState({ name: '', text: '' });
+    const fileInputRef1 = useRef(null);
+    const fileInputRef2 = useRef(null);
+    const analyzeFileInputRef = useRef(null);
+
+    const handleTextareaFocus = () => {
+        if (uploadedImageFile || uploadedImageSrc) {
+            setUploadedImageFile(null);
+            setUploadedImageSrc(null);
+            setDocumentText('');
+            resetState();
+        }
+    };
+    
+    const handleTextareaChange = (e) => {
+      setDocumentText(e.target.value);
+    }
+
+    const handleFileChange = (e, docSetter) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        resetState();
+        
+        if (activeTab === 'analyze' && file.type.startsWith('image/')) {
+            setUploadedImageFile(file);
+            const reader = new FileReader();
+            reader.onload = (event) => setUploadedImageSrc(event.target.result);
+            reader.readAsDataURL(file);
+            setDocumentText('');
+        } else {
+            setUploadedImageFile(null);
+            setUploadedImageSrc(null);
+            readFile(file, (text) => {
+                if(docSetter) {
+                    docSetter({ name: file.name, text });
+                } else {
+                    setDocumentText(text);
+                }
+            });
+        }
+    };
+
+    const handleCompare = async () => {
+        // This function would be passed in as a prop if needed
+    };
+    
+    const readFile = (file, callback) => {
+        const reader = new FileReader();
+        if (file.type === 'application/pdf') {
+            reader.onload = (e) => {
+                const typedarray = new Uint8Array(e.target.result);
+                window.pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+                    const pagePromises = Array.from({ length: pdf.numPages }, (_, i) => pdf.getPage(i + 1).then(page => page.getTextContent().then(content => content.items.map(item => item.str).join(' '))));
+                    Promise.all(pagePromises).then(pagesText => { callback(pagesText.join('\n\n')); });
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        } else if (file.type === 'text/plain') {
+            reader.onload = (e) => callback(e.target.result);
+            reader.readAsText(file);
+        } else if (!file.type.startsWith('image/')) {
+             setError('Unsupported file type. Please use .txt, .pdf, or an image file.');
+        }
+    };
+  
+    const DropZone = ({ onFileChange, accept, inputRef, label, fileName }) => {
+        const [isHighlighted, setIsHighlighted] = useState(false);
+        const preventDefaults = (e) => { e.preventDefault(); e.stopPropagation(); };
+        const highlight = (e) => { preventDefaults(e); setIsHighlighted(true); };
+        const unhighlight = (e) => { preventDefaults(e); setIsHighlighted(false); };
+        const handleDrop = (e) => {
+            unhighlight(e);
+            const file = e.dataTransfer.files[0];
+            if (file) onFileChange({ target: { files: [file] } });
+        };
+        return (
+            <div className="w-full">
+                <p className="font-semibold text-xl mb-2 text-gray-800 dark:text-gray-200">{label}</p>
+                <div
+                    className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-300 cursor-pointer flex flex-col items-center justify-center ${isHighlighted ? 'border-blue-500 bg-blue-50 dark:bg-gray-700' : 'border-gray-300 dark:border-gray-600'}`}
+                    onDrop={handleDrop} onDragOver={highlight} onDragEnter={highlight} onDragLeave={unhighlight} onClick={() => inputRef.current.click()}
+                >
+                    <UploadIcon />
+                    <p className="mt-2 text-lg text-gray-500 dark:text-gray-400">{fileName || "Drag & drop, or click to browse"}</p>
+                    <input type="file" ref={inputRef} onChange={onFileChange} accept={accept} className="hidden" />
+                </div>
+            </div>
+        );
+    };
+
+    return (
+     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 flex flex-col">
+        <h2 className="text-3xl font-semibold mb-4 text-gray-900 dark:text-white">Provide Your Document</h2>
+        <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4">
+            <button onClick={() => setActiveTab('analyze')} className={`px-4 py-2 text-lg font-medium transition-colors ${activeTab === 'analyze' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>Analyze</button>
+            <button onClick={() => setActiveTab('compare')} className={`px-4 py-2 text-lg font-medium transition-colors ${activeTab === 'compare' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>Compare</button>
+            <button onClick={() => setActiveTab('url')} className={`px-4 py-2 text-lg font-medium transition-colors ${activeTab === 'url' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>URL</button>
+        </div>
+        <div className="min-h-[250px]">
+            {activeTab === 'analyze' && (
+                 <>
+                    <DropZone onFileChange={(e) => handleFileChange(e)} accept=".txt,.pdf,image/*" inputRef={analyzeFileInputRef} label="Upload Document or Image" fileName={uploadedImageFile?.name || (documentText ? 'Text ready' : null)} />
+                     {uploadedImageSrc && (
+                        <div className="mt-4"><img src={uploadedImageSrc} alt="Preview" className="max-w-full max-h-48 mx-auto rounded-lg"/></div>
+                     )}
+                    <div className="my-4 text-center text-gray-400 dark:text-gray-500 text-lg">OR</div>
+                    <textarea 
+                        value={documentText} 
+                        onFocus={handleTextareaFocus}
+                        onChange={handleTextareaChange} 
+                        placeholder="Paste your legal document text here..." 
+                        className="w-full flex-grow p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors min-h-[150px] text-lg"
+                    />
+                </>
+            )}
+            {activeTab === 'compare' && (
+                <div className="flex flex-col md:flex-row gap-4">
+                    <DropZone onFileChange={(e) => handleFileChange(e, setDoc1)} accept=".txt,.pdf" inputRef={fileInputRef1} label="Original Document" fileName={doc1.name}/>
+                    <DropZone onFileChange={(e) => handleFileChange(e, setDoc2)} accept=".txt,.pdf" inputRef={fileInputRef2} label="Revised Document" fileName={doc2.name}/>
+                </div>
+            )}
+            {activeTab === 'url' && (
+                <div className="flex flex-col h-full justify-center">
+                    <label htmlFor="url-input" className="block text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">Website URL</label>
+                    <div className="flex gap-2">
+                        <input id="url-input" type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/terms" className="flex-grow p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors text-lg" />
+                        <button onClick={() => {}} disabled={isFetchingUrl} className="bg-gray-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-700 disabled:bg-gray-400 flex items-center justify-center">
+                            {isFetchingUrl ? <LoadingSpinner/> : <LinkIcon/>} Fetch & Analyze
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+        <div className="mt-6">
+            <label htmlFor="language-select" className="block text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">Analysis Language</label>
+            <select id="language-select" value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors text-lg">
+                <option>English</option> <option>Hindi</option> <option>Gujarati</option> <option>Kannada</option> <option>Marathi</option> <option>Tamil</option> <option>Telugu</option>
+            </select>
+        </div>
+        {activeTab === 'analyze' && <button onClick={() => handleAnalysis(!!uploadedImageFile)} disabled={isLoading || (!documentText && !uploadedImageFile)} className="w-full mt-6 bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 disabled:bg-blue-400 dark:disabled:bg-blue-800 disabled:cursor-not-allowed transition-all flex items-center justify-center text-xl"> {isLoading ? <><LoadingSpinner/>Analyzing...</> : 'Analyze Document'} </button>}
+        {activeTab === 'compare' && <button onClick={handleCompare} disabled={isLoading || !doc1.text || !doc2.text} className="w-full mt-6 bg-purple-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-purple-700 disabled:bg-purple-400 dark:disabled:bg-purple-800 disabled:cursor-not-allowed transition-all flex items-center justify-center text-xl"> {isLoading ? <><LoadingSpinner/>Comparing...</> : 'Compare Documents'} </button>}
+        {error && <p className="text-red-500 text-lg mt-4 text-center">{error}</p>}
+    </div>
+  );
+};
+
+const AnalysisDashboard = ({ dashboardData, audioUrl, isAudioLoading }) => (
+    <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 flex flex-col gap-6 animate-fade-in">
+        <div className="flex flex-col items-center mb-4"> <RiskGauge score={dashboardData?.riskScore} /> </div>
+        <div className="mb-4"> <AudioPlayer src={audioUrl} isLoading={isAudioLoading} /> </div>
+        <div className="flex flex-col gap-8">
+            <InfoCard title="Your Obligations" icon={<HandshakeIcon />} items={dashboardData?.obligations} type="obligations" />
+            <InfoCard title="Potential Risks" icon={<ShieldIcon />} items={dashboardData?.risks} type="risks" />
+            <InfoCard title="Key Benefits" icon={<ThumbsUpIcon />} items={dashboardData?.benefits} type="benefits" />
+        </div>
+    </div>
+);
+  
+const ComparisonDashboard = ({ comparisonData }) => (
+     <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 flex flex-col gap-8 animate-fade-in">
+        <h2 className="text-4xl font-bold text-center text-gray-900 dark:text-white">Comparison Analysis</h2>
+        <ComparisonCard title="Added Clauses" items={comparisonData?.added} type="added" />
+        <ComparisonCard title="Removed Clauses" items={comparisonData?.removed} type="removed" />
+        <ComparisonCard title="Modified Clauses" items={comparisonData?.modified} type="modified" />
+     </div>
+);
+
+const AppFooter = () => (
+    <footer className="bg-gray-800 dark:bg-black text-white mt-12">
+        <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div className="md:col-span-1">
+                    <h2 className="text-2xl font-bold">LegalEase AI</h2>
+                    <p className="mt-2 text-gray-400">Demystifying legal documents for everyone.</p>
+                </div>
+                <div className="md:col-span-2">
+                    <h3 className="text-xl font-semibold text-gray-200">Your Privacy, Our Priority</h3>
+                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-6 text-gray-400">
+                        <div className="flex items-start gap-3"><DatabaseZapIcon className="w-7 h-7 flex-shrink-0 text-blue-400"/><div><h4 className="font-semibold text-white">Stateless by Design</h4><p>We do not store your documents. Every analysis is processed in memory and discarded immediately.</p></div></div>
+                        <div className="flex items-start gap-3"><LockIcon className="w-7 h-7 flex-shrink-0 text-blue-400"/><div><h4 className="font-semibold text-white">Secure Connection</h4><p>All communication between your browser and our servers is encrypted using industry-standard HTTPS.</p></div></div>
+                        <div className="flex items-start gap-3"><ZapIcon className="w-7 h-7 flex-shrink-0 text-blue-400"/><div><h4 className="font-semibold text-white">In-Browser Processing</h4><p>Text from PDFs and images is extracted locally in your browser before analysis, enhancing privacy.</p></div></div>
+                         <div className="flex items-start gap-3"><ShieldIcon className="w-7 h-7 flex-shrink-0 text-blue-400"/><div><h4 className="font-semibold text-white">Google Cloud Security</h4><p>We leverage Google's enterprise-grade security for all AI processing, ensuring your data is protected.</p></div></div>
+                    </div>
+                </div>
+            </div>
+            <div className="mt-8 border-t border-gray-700 pt-8 text-center text-gray-500"><p>&copy; {new Date().getFullYear()} LegalEase AI. All rights reserved.</p></div>
+        </div>
+    </footer>
+);
 
 
 // --- MAIN APP COMPONENT ---
@@ -465,7 +702,7 @@ export default function App() {
 
   const handleAnalysis = async (isImageAnalysis) => {
     setIsLoading(true);
-    setDashboardData({ riskScore: 0, obligations: [], risks: [], benefits: [] });
+    setDashboardData(null);
     setComparisonData(null);
     setAudioUrl(null);
     setError('');
@@ -524,6 +761,8 @@ export default function App() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedJson = '';
+
+      setDashboardData({ riskScore: 0, obligations: [], risks: [], benefits: [] });
 
       while (true) {
         const { value, done } = await reader.read();
@@ -586,238 +825,6 @@ export default function App() {
     setTimeout(() => setChatInitialMessage(''), 100);
   }
 
-  const InputSection = () => {
-    const [url, setUrl] = useState('');
-    const [isFetchingUrl, setIsFetchingUrl] = useState(false);
-
-    const [doc1, setDoc1] = useState({ name: '', text: '' });
-    const [doc2, setDoc2] = useState({ name: '', text: '' });
-    const fileInputRef1 = useRef(null);
-    const fileInputRef2 = useRef(null);
-    const analyzeFileInputRef = useRef(null);
-
-    const handleFileChange = (e, docSetter) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        resetState();
-        
-        if (activeTab === 'analyze' && file.type.startsWith('image/')) {
-            setUploadedImageFile(file);
-            const reader = new FileReader();
-            reader.onload = (event) => setUploadedImageSrc(event.target.result);
-            reader.readAsDataURL(file);
-            setDocumentText('');
-        } else {
-            setUploadedImageFile(null);
-            setUploadedImageSrc(null);
-            readFile(file, (text) => {
-                if(docSetter) {
-                    docSetter({ name: file.name, text });
-                } else {
-                    setDocumentText(text);
-                }
-            });
-        }
-    };
-
-    const handleCompare = async () => {
-        if (!doc1.text || !doc2.text) { setError('Please upload both documents for comparison.'); return; }
-        setIsLoading(true); resetState();
-        try {
-            const response = await fetch(`${BACKEND_URL}/compare-documents`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ document1: doc1.text, document2: doc2.text, language }),
-            });
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.detail || 'Failed to compare documents.');
-            }
-            const data = await response.json();
-            setComparisonData(data);
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    
-    const readFile = (file, callback) => {
-        const reader = new FileReader();
-
-        if (file.type === 'application/pdf') {
-            reader.onload = (e) => {
-                const typedarray = new Uint8Array(e.target.result);
-                window.pdfjsLib.getDocument(typedarray).promise.then(pdf => {
-                    const pagePromises = Array.from({ length: pdf.numPages }, (_, i) => pdf.getPage(i + 1).then(page => page.getTextContent().then(content => content.items.map(item => item.str).join(' '))));
-                    Promise.all(pagePromises).then(pagesText => { callback(pagesText.join('\n\n')); });
-                });
-            };
-            reader.readAsArrayBuffer(file);
-        } else if (file.type === 'text/plain') {
-            reader.onload = (e) => callback(e.target.result);
-            reader.readAsText(file);
-        } else if (!file.type.startsWith('image/')) {
-             setError('Unsupported file type. Please use .txt, .pdf, or an image file.');
-        }
-    };
-  
-    const DropZone = ({ onFileChange, accept, inputRef, label, fileName }) => {
-        const [isHighlighted, setIsHighlighted] = useState(false);
-        const preventDefaults = (e) => { e.preventDefault(); e.stopPropagation(); };
-        const highlight = (e) => { preventDefaults(e); setIsHighlighted(true); };
-        const unhighlight = (e) => { preventDefaults(e); setIsHighlighted(false); };
-        const handleDrop = (e) => {
-            unhighlight(e);
-            const file = e.dataTransfer.files[0];
-            if (file) onFileChange({ target: { files: [file] } });
-        };
-        return (
-            <div className="w-full">
-                <p className="font-semibold text-xl mb-2 text-gray-800 dark:text-gray-200">{label}</p>
-                <div
-                    className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-300 cursor-pointer flex flex-col items-center justify-center ${isHighlighted ? 'border-blue-500 bg-blue-50 dark:bg-gray-700' : 'border-gray-300 dark:border-gray-600'}`}
-                    onDrop={handleDrop} onDragOver={highlight} onDragEnter={highlight} onDragLeave={unhighlight} onClick={() => inputRef.current.click()}
-                >
-                    <UploadIcon />
-                    <p className="mt-2 text-lg text-gray-500 dark:text-gray-400">{fileName || "Drag & drop, or click to browse"}</p>
-                    <input type="file" ref={inputRef} onChange={onFileChange} accept={accept} className="hidden" />
-                </div>
-            </div>
-        );
-    };
-
-    return (
-     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 flex flex-col">
-        <h2 className="text-3xl font-semibold mb-4 text-gray-900 dark:text-white">Provide Your Document</h2>
-        
-        <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4">
-            <button onClick={() => setActiveTab('analyze')} className={`px-4 py-2 text-lg font-medium transition-colors ${activeTab === 'analyze' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>Analyze</button>
-            <button onClick={() => setActiveTab('compare')} className={`px-4 py-2 text-lg font-medium transition-colors ${activeTab === 'compare' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>Compare</button>
-            <button onClick={() => setActiveTab('url')} className={`px-4 py-2 text-lg font-medium transition-colors ${activeTab === 'url' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>URL</button>
-        </div>
-
-        <div className="min-h-[250px]">
-            {activeTab === 'analyze' && (
-                 <>
-                    <DropZone onFileChange={(e) => handleFileChange(e)} accept=".txt,.pdf,image/*" inputRef={analyzeFileInputRef} label="Upload Document or Image" fileName={uploadedImageFile?.name || (documentText ? 'Text ready' : null)} />
-                     {uploadedImageSrc && !dashboardData && (
-                        <div className="mt-4"><img src={uploadedImageSrc} alt="Preview" className="max-w-full max-h-48 mx-auto rounded-lg"/></div>
-                     )}
-                    <div className="my-4 text-center text-gray-400 dark:text-gray-500 text-lg">OR</div>
-                    <textarea value={documentText} onChange={(e) => { setDocumentText(e.target.value); setUploadedImageFile(null); setUploadedImageSrc(null); }} placeholder="Paste your legal document text here..." className="w-full flex-grow p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors min-h-[150px] text-lg"></textarea>
-                </>
-            )}
-            {activeTab === 'compare' && (
-                <div className="flex flex-col md:flex-row gap-4">
-                    <DropZone onFileChange={(e) => handleFileChange(e, setDoc1)} accept=".txt,.pdf" inputRef={fileInputRef1} label="Original Document" fileName={doc1.name}/>
-                    <DropZone onFileChange={(e) => handleFileChange(e, setDoc2)} accept=".txt,.pdf" inputRef={fileInputRef2} label="Revised Document" fileName={doc2.name}/>
-                </div>
-            )}
-            {activeTab === 'url' && (
-                <div className="flex flex-col h-full justify-center">
-                    <label htmlFor="url-input" className="block text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">Website URL</label>
-                    <div className="flex gap-2">
-                        <input id="url-input" type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/terms" className="flex-grow p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors text-lg" />
-                        <button onClick={() => {}} disabled={isFetchingUrl} className="bg-gray-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-700 disabled:bg-gray-400 flex items-center justify-center">
-                            {isFetchingUrl ? <LoadingSpinner/> : <LinkIcon/>} Fetch & Analyze
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
-
-        <div className="mt-6">
-            <label htmlFor="language-select" className="block text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">Analysis Language</label>
-            <select id="language-select" value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors text-lg">
-                <option>English</option>
-                <option>Hindi</option>
-                <option>Gujarati</option>
-                <option>Kannada</option>
-                <option>Marathi</option>
-                <option>Tamil</option>
-                <option>Telugu</option>
-            </select>
-        </div>
-        
-        {activeTab === 'analyze' && <button onClick={() => handleAnalysis(!!uploadedImageFile)} disabled={isLoading || (!documentText && !uploadedImageFile)} className="w-full mt-6 bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 disabled:bg-blue-400 dark:disabled:bg-blue-800 disabled:cursor-not-allowed transition-all flex items-center justify-center text-xl"> {isLoading ? <><LoadingSpinner/>Analyzing...</> : 'Analyze Document'} </button>}
-        {activeTab === 'compare' && <button onClick={handleCompare} disabled={isLoading || !doc1.text || !doc2.text} className="w-full mt-6 bg-purple-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-purple-700 disabled:bg-purple-400 dark:disabled:bg-purple-800 disabled:cursor-not-allowed transition-all flex items-center justify-center text-xl"> {isLoading ? <><LoadingSpinner/>Comparing...</> : 'Compare Documents'} </button>}
-
-        {error && <p className="text-red-500 text-lg mt-4 text-center">{error}</p>}
-    </div>
-  );
-  }
-  const AnalysisDashboard = () => (
-    <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 flex flex-col gap-6 animate-fade-in">
-        <div className="flex flex-col items-center mb-4"> <RiskGauge score={dashboardData?.riskScore} /> </div>
-        <div className="mb-4"> <AudioPlayer src={audioUrl} isLoading={isAudioLoading} /> </div>
-        <div className="flex flex-col gap-8">
-            <InfoCard title="Your Obligations" icon={<HandshakeIcon />} items={dashboardData?.obligations} type="obligations" />
-            <InfoCard title="Potential Risks" icon={<ShieldIcon />} items={dashboardData?.risks} type="risks" />
-            <InfoCard title="Key Benefits" icon={<ThumbsUpIcon />} items={dashboardData?.benefits} type="benefits" />
-        </div>
-    </div>
-  );
-  
-  const ComparisonDashboard = () => (
-     <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 flex flex-col gap-8 animate-fade-in">
-        <h2 className="text-4xl font-bold text-center text-gray-900 dark:text-white">Comparison Analysis</h2>
-        <ComparisonCard title="Added Clauses" items={comparisonData?.added} type="added" />
-        <ComparisonCard title="Removed Clauses" items={comparisonData?.removed} type="removed" />
-        <ComparisonCard title="Modified Clauses" items={comparisonData?.modified} type="modified" />
-     </div>
-  );
-
-  const AppFooter = () => (
-    <footer className="bg-gray-800 dark:bg-black text-white mt-12">
-        <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="md:col-span-1">
-                    <h2 className="text-2xl font-bold">LegalEase AI</h2>
-                    <p className="mt-2 text-gray-400">Demystifying legal documents for everyone.</p>
-                </div>
-                <div className="md:col-span-2">
-                    <h3 className="text-xl font-semibold text-gray-200">Your Privacy, Our Priority</h3>
-                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-6 text-gray-400">
-                        <div className="flex items-start gap-3">
-                            <DatabaseZapIcon className="w-7 h-7 flex-shrink-0 text-blue-400"/>
-                            <div>
-                                <h4 className="font-semibold text-white">Stateless by Design</h4>
-                                <p>We do not store your documents. Every analysis is processed in memory and discarded immediately.</p>
-                            </div>
-                        </div>
-                        <div className="flex items-start gap-3">
-                            <LockIcon className="w-7 h-7 flex-shrink-0 text-blue-400"/>
-                            <div>
-                                <h4 className="font-semibold text-white">Secure Connection</h4>
-                                <p>All communication between your browser and our servers is encrypted using industry-standard HTTPS.</p>
-                            </div>
-                        </div>
-                        <div className="flex items-start gap-3">
-                            <ZapIcon className="w-7 h-7 flex-shrink-0 text-blue-400"/>
-                            <div>
-                                <h4 className="font-semibold text-white">In-Browser Processing</h4>
-                                <p>Text from PDFs and images is extracted locally in your browser before analysis, enhancing privacy.</p>
-                            </div>
-                        </div>
-                         <div className="flex items-start gap-3">
-                            <ShieldIcon className="w-7 h-7 flex-shrink-0 text-blue-400"/>
-                            <div>
-                                <h4 className="font-semibold text-white">Google Cloud Security</h4>
-                                <p>We leverage Google's enterprise-grade security for all AI processing, ensuring your data is protected.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div className="mt-8 border-t border-gray-700 pt-8 text-center text-gray-500">
-                <p>&copy; {new Date().getFullYear()} LegalEase AI. All rights reserved.</p>
-            </div>
-        </div>
-    </footer>
-  );
-
   return (
     <div className="bg-gray-100 dark:bg-gray-900 min-h-screen font-sans text-gray-800 dark:text-gray-200 transition-colors duration-300 flex flex-col">
        <header className="bg-gray-800 dark:bg-black text-white shadow-lg sticky top-0 z-40">
@@ -830,12 +837,32 @@ export default function App() {
       </header>
       <main className="p-4 sm:p-6 md:p-8 flex-grow">
         <div className="flex flex-col items-center gap-8">
-            <div className="w-full max-w-4xl"> <InputSection /> </div>
+            <div className="w-full max-w-4xl"> 
+                <InputSection 
+                    activeTab={activeTab} setActiveTab={setActiveTab}
+                    documentText={documentText} setDocumentText={setDocumentText}
+                    language={language} setLanguage={setLanguage}
+                    isLoading={isLoading} error={error} setError={setError}
+                    uploadedImageFile={uploadedImageFile} setUploadedImageFile={setUploadedImageFile}
+                    uploadedImageSrc={uploadedImageSrc} setUploadedImageSrc={setUploadedImageSrc}
+                    handleAnalysis={handleAnalysis}
+                    resetState={resetState}
+                />
+            </div>
             <div className="w-full">
-                {dashboardData && <AnalysisDashboard />}
-                {comparisonData && <ComparisonDashboard />}
+                {isLoading && (
+                    <div className="w-full max-w-4xl mx-auto relative">
+                       <LoadingOverlay />
+                       <div className="flex items-center justify-center text-center min-h-[500px] bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 opacity-50">
+                           <p className="text-xl text-gray-400 dark:text-gray-500">Your analysis dashboard will appear here.</p>
+                       </div>
+                    </div>
+                )}
 
-                {!dashboardData && !comparisonData && (
+                {!isLoading && dashboardData && <AnalysisDashboard dashboardData={dashboardData} audioUrl={audioUrl} isAudioLoading={isAudioLoading} />}
+                {!isLoading && comparisonData && <ComparisonDashboard comparisonData={comparisonData} />}
+
+                {!isLoading && !dashboardData && !comparisonData && (
                     <div className="w-full max-w-4xl mx-auto">
                         <div className="flex items-center justify-center text-center min-h-[500px] bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
                             <p className="text-xl text-gray-400 dark:text-gray-500">Your analysis dashboard will appear here.</p>
@@ -859,6 +886,10 @@ style.innerHTML = `
 @keyframes wave {
   0% { height: 0.25rem; }
   100% { height: 100%; }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 `;
 document.head.appendChild(style);
