@@ -24,6 +24,9 @@ const ZapIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height
 const DatabaseZapIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6c0-1.66 4-3 8-3s8 1.34 8 3"/><path d="M4 6v6c0 1.66 4 3 8 3s8-1.34 8-3V6"/><path d="M4 12v6c0 1.66 4 3 8 3s8-1.34 8-3v-6"/><path d="m18 14-4 4h6l-4 4"/></svg>);
 const MicIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line></svg>);
 
+// Define Backend URL. This approach avoids build warnings about import.meta.
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BACKEND_URL = isLocal ? 'http://127.0.0.1:8000' : 'https://legalease-ai-backend.onrender.com';
 
 // --- DASHBOARD COMPONENTS ---
 const RiskGauge = ({ score = 0 }) => {
@@ -190,7 +193,7 @@ const Suggestions = ({ documentText, onSuggestionClick, language }) => {
             const fetchSuggestions = async () => {
                 setIsLoading(true);
                 try {
-                    const response = await fetch('import.meta.env.VITE_BACKEND_URL/generate-suggestions', {
+                    const response = await fetch(`${BACKEND_URL}/generate-suggestions`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ document: documentText, language }),
@@ -231,6 +234,7 @@ const Suggestions = ({ documentText, onSuggestionClick, language }) => {
         </div>
     );
 };
+
 
 // --- CHATBOT COMPONENT ---
 const Chatbot = ({ documentText, language, initialMessage }) => {
@@ -294,7 +298,6 @@ const Chatbot = ({ documentText, language, initialMessage }) => {
     const handleMicClick = () => {
         if (isRecording) {
             recognitionRef.current.stop();
-            setIsRecording(false);
         } else {
             recognitionRef.current.lang = languageCodeMap[language] || 'en-US';
             recognitionRef.current.start();
@@ -312,7 +315,7 @@ const Chatbot = ({ documentText, language, initialMessage }) => {
         setIsChatLoading(true);
 
         try {
-            const response = await fetch('import.meta.env.VITE_BACKEND_URL/chat', {
+            const response = await fetch(`${BACKEND_URL}/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -339,13 +342,13 @@ const Chatbot = ({ documentText, language, initialMessage }) => {
 
     return (
         <>
-            <div className={`fixed bottom-5 right-5 z-50 transition-transform duration-300 ${isOpen ? 'translate-x-[500px]' : 'translate-x-0'}`}>
+            <div className={`fixed bottom-5 right-5 z-50 transition-all duration-300 ${isOpen ? 'opacity-0 scale-0' : 'opacity-100 scale-100'}`}>
                 <button onClick={() => setIsOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-lg">
                     <ChatIcon />
                 </button>
             </div>
 
-            <div className={`fixed bottom-5 right-5 z-50 w-full max-w-md h-[70vh] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl flex flex-col transition-all duration-300 ${isOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10 pointer-events-none'}`}>
+            <div className={`fixed bottom-0 right-0 md:bottom-5 md:right-5 z-50 w-full max-w-full md:max-w-md h-[80vh] md:h-[70vh] bg-white dark:bg-gray-800 rounded-none md:rounded-2xl shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-y-0' : 'translate-y-full'}`}>
                 <header className="flex items-center justify-between p-4 border-b dark:border-gray-700">
                     <h3 className="text-xl font-bold">AI Assistant</h3>
                     <button onClick={() => setIsOpen(false)} className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
@@ -376,7 +379,7 @@ const Chatbot = ({ documentText, language, initialMessage }) => {
                     )}
                 </div>
                 <form onSubmit={handleSubmit} className="p-4 border-t dark:border-gray-700 flex items-center gap-2">
-                    <button type="button" onClick={handleMicClick} className={`p-3 rounded-lg transition-colors ${isRecording ? 'bg-red-500 text-white' : 'bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500'}`}>
+                    <button type="button" onClick={handleMicClick} className={`p-3 rounded-lg transition-colors ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500'}`}>
                         <MicIcon />
                     </button>
                     <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder="Ask a question..." className="flex-1 p-3 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 text-lg" />
@@ -467,12 +470,12 @@ export default function App() {
                 reader.onerror = error => reject(error);
             });
             
-            const ocrResponse = await fetch('import.meta.env.VITE_BACKEND_URL/extract-text-from-image', {
+            const ocrResponse = await fetch(`${BACKEND_URL}/extract-text-from-image`, {
                  method: 'POST',
                  headers: { 'Content-Type': 'application/json' },
                  body: JSON.stringify({ image_data: base64Data }),
             });
-            if (!ocrResponse.ok) throw new Error('Failed to extract text from image.');
+            if (!ocrResponse.ok) throw new Error('Image processing not working');
             const ocrData = await ocrResponse.json();
             textToAnalyze = ocrData.text;
             setDocumentText(textToAnalyze);
@@ -490,7 +493,7 @@ export default function App() {
     }
 
     try {
-      const response = await fetch('import.meta.env.VITE_BACKEND_URL/analyze-structured', {
+      const response = await fetch(`${BACKEND_URL}/analyze-structured`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ document: textToAnalyze, question: 'Summarize the key risks, obligations, and benefits, and provide a risk score.', language }),
@@ -521,7 +524,7 @@ export default function App() {
                     Key Benefits are: ${dashboardData.benefits.join('; ')}.
                 `;
 
-                const response = await fetch('import.meta.env.VITE_BACKEND_URL/generate-audio-summary', {
+                const response = await fetch(`${BACKEND_URL}/generate-audio-summary`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: summaryText, language: language }),
@@ -588,7 +591,7 @@ export default function App() {
         if (!doc1.text || !doc2.text) { setError('Please upload both documents for comparison.'); return; }
         setIsLoading(true); resetState();
         try {
-            const response = await fetch('import.meta.env.VITE_BACKEND_URL/compare-documents', {
+            const response = await fetch(`${BACKEND_URL}/compare-documents`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ document1: doc1.text, document2: doc2.text, language }),
@@ -669,7 +672,7 @@ export default function App() {
                         <div className="mt-4"><img src={uploadedImageSrc} alt="Preview" className="max-w-full max-h-48 mx-auto rounded-lg"/></div>
                      )}
                     <div className="my-4 text-center text-gray-400 dark:text-gray-500 text-lg">OR</div>
-                    <textarea value={documentText} onChange={(e) => { setDocumentText(e.target.value); setUploadedImageFile(null); setUploadedImageSrc(null); resetState(); }} placeholder="Paste your legal document text here..." className="w-full flex-grow p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors min-h-[150px] text-lg"></textarea>
+                    <textarea value={documentText} onChange={(e) => { setDocumentText(e.target.value); setUploadedImageFile(null); setUploadedImageSrc(null); }} placeholder="Paste your legal document text here..." className="w-full flex-grow p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors min-h-[150px] text-lg"></textarea>
                 </>
             )}
             {activeTab === 'compare' && (
@@ -783,7 +786,7 @@ export default function App() {
 
   return (
     <div className="bg-gray-100 dark:bg-gray-900 min-h-screen font-sans text-gray-800 dark:text-gray-200 transition-colors duration-300 flex flex-col">
-       <header className="bg-gray-800 dark:bg-black text-white shadow-lg">
+       <header className="bg-gray-800 dark:bg-black text-white shadow-lg sticky top-0 z-40">
         <div className="max-w-7xl mx-auto p-4 sm:px-6 lg:px-8 flex justify-between items-center">
             <h1 className="text-4xl font-bold">LegalEase Ai</h1>
             <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors text-yellow-300">
