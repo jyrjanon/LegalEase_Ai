@@ -24,7 +24,6 @@ const ZapIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height
 const DatabaseZapIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6c0-1.66 4-3 8-3s8 1.34 8 3"/><path d="M4 6v6c0 1.66 4 3 8 3s8-1.34 8-3V6"/><path d="M4 12v6c0 1.66 4 3 8 3s8-1.34 8-3v-6"/><path d="m18 14-4 4h6l-4 4"/></svg>);
 const MicIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line></svg>);
 
-// Define Backend URL. This approach avoids build warnings about import.meta.
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const BACKEND_URL = isLocal ? 'http://127.0.0.1:8000' : 'https://legalease-ai-backend.onrender.com';
 
@@ -63,7 +62,7 @@ const InfoCard = ({ title, icon, items = [], type }) => {
                 <h3 className="text-2xl font-semibold text-gray-900 dark:text-white">{title}</h3>
             </div>
             <ul className="space-y-4 text-lg text-gray-700 dark:text-gray-300">
-                {items.length > 0 ? (
+                {items && items.length > 0 ? (
                     items.map((item, index) => (
                         <li key={index} className="flex items-start gap-3">
                             <span className={`flex-shrink-0 mt-1.5 w-6 h-6 text-sm flex items-center justify-center rounded-full ${currentTag.color}`}>{currentTag.icon}</span>
@@ -159,7 +158,7 @@ const ComparisonCard = ({ title, items = [], type }) => {
                 <h3 className="text-2xl font-semibold text-gray-900 dark:text-white">{title}</h3>
             </div>
             <div className="space-y-4 text-lg text-gray-700 dark:text-gray-300">
-                {items.length > 0 ? (
+                {items && items.length > 0 ? (
                     items.map((item, index) => (
                         <div key={index} className="p-4 rounded-lg bg-gray-100 dark:bg-gray-900/50">
                             {type === 'modified' && (
@@ -235,7 +234,6 @@ const Suggestions = ({ documentText, onSuggestionClick, language }) => {
     );
 };
 
-
 // --- CHATBOT COMPONENT ---
 const Chatbot = ({ documentText, language, initialMessage }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -263,7 +261,7 @@ const Chatbot = ({ documentText, language, initialMessage }) => {
         if(chatBodyRef.current) {
             chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
         }
-    }, [messages]);
+    }, [messages, isChatLoading]);
 
     useEffect(() => {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -309,26 +307,45 @@ const Chatbot = ({ documentText, language, initialMessage }) => {
         if (!messageToSend.trim()) return;
 
         const newUserMessage = { role: 'user', content: messageToSend };
-        const updatedMessages = [...messages, newUserMessage];
-        setMessages(updatedMessages);
+        setMessages(prev => [...prev, newUserMessage]);
         setUserInput('');
         setIsChatLoading(true);
 
+        setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+
         try {
-            const response = await fetch(`${BACKEND_URL}/chat`, {
+            const response = await fetch(`${BACKEND_URL}/chat-stream`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     document: documentText,
-                    messages: updatedMessages,
+                    messages: [...messages, newUserMessage],
                     language,
                 }),
             });
+
             if (!response.ok) throw new Error("Failed to get response from chat.");
-            const data = await response.json();
-            setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value);
+                setMessages(prev => {
+                    const lastMessage = { ...prev[prev.length - 1] };
+                    lastMessage.content += chunk;
+                    return [...prev.slice(0, -1), lastMessage];
+                });
+            }
+
         } catch (error) {
-            setMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I encountered an error. Please try again." }]);
+            setMessages(prev => {
+                const lastMessage = { ...prev[prev.length - 1] };
+                lastMessage.content = "Sorry, I encountered an error. Please try again.";
+                return [...prev.slice(0, -1), lastMessage];
+            });
             console.error("Chat error:", error);
         } finally {
             setIsChatLoading(false);
@@ -448,7 +465,7 @@ export default function App() {
 
   const handleAnalysis = async (isImageAnalysis) => {
     setIsLoading(true);
-    setDashboardData(null);
+    setDashboardData({ riskScore: 0, obligations: [], risks: [], benefits: [] });
     setComparisonData(null);
     setAudioUrl(null);
     setError('');
@@ -493,26 +510,43 @@ export default function App() {
     }
 
     try {
-      const response = await fetch(`${BACKEND_URL}/analyze-structured`, {
+      const response = await fetch(`${BACKEND_URL}/analyze-structured-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ document: textToAnalyze, question: 'Summarize the key risks, obligations, and benefits, and provide a risk score.', language }),
       });
+
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.detail || `HTTP error! status: ${response.status}`);
+        const errData = await response.text();
+        throw new Error(errData || `HTTP error! status: ${response.status}`);
       }
-      const data = await response.json();
-      setDashboardData(data);
+      
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedJson = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        accumulatedJson += decoder.decode(value, { stream: true });
+        
+        try {
+            const parsedData = JSON.parse(accumulatedJson);
+            setDashboardData(parsedData);
+        } catch (e) {
+            // Incomplete JSON, continue accumulating
+        }
+      }
+
     } catch (err) {
-      setError(`Analysis failed. ${err.message}`);
+      setError(`Analysis failed: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (dashboardData) {
+    if (dashboardData && dashboardData.riskScore > 0) {
         const fetchAudio = async () => {
             setIsAudioLoading(true);
             try {
