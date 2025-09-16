@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 google-cloud-aiplatform
 google-cloud-texttospeech
+google-cloud-vision
 requests
 beautifulsoup4
 pydantic
