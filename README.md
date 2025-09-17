@@ -38,7 +38,7 @@ This project uses **Google Cloud + Generative AI** to make contracts **easy-to-u
 ## 🛠️ Tech Stack  
 
 <p align="center">
-  <img src="https://skillicons.dev/icons?i=react,tailwind,python,fastapi,googlecloud,firebase" />
+  <img src="https://skillicons.dev/icons?i=react,python,fastapi,googlecloud" />
 </p>
 
 - **Frontend**: React + TailwindCSS  
