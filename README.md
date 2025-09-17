@@ -43,9 +43,7 @@ This project uses **Google Cloud + Generative AI** to make contracts **easy-to-u
 
 - **Frontend**: React + TailwindCSS  
 - **Backend**: FastAPI (Python)  
-- **AI/ML**: Google Vertex AI (Gemini), Speech-to-Text, Text-to-Speech  
-- **Database**: Firestore  
-- **Avatar API**: D-ID / Inworld  
+- **AI/ML**: Google Vertex AI (Gemini), Speech-to-Text, Text-to-Speech 
 
 ---
 
@@ -53,5 +51,5 @@ This project uses **Google Cloud + Generative AI** to make contracts **easy-to-u
 
 ### 1️⃣ Clone Repo
 ```bash
-git clone https://github.com/your-username/legal-doc-demystifier.git
-cd legal-doc-demystifier
+git clone https://github.com/your-username/LegalEase_Ai.git
+cd LegalEase_Ai
