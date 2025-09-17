@@ -17,7 +17,7 @@ This project uses **Google Cloud + Generative AI** to make contracts **easy-to-u
 ---
 
 ## 🎥 Demo Preview  
-<div style="position:relative; width:100%; height:0px; padding-bottom:222.997%"><iframe allow="fullscreen;autoplay" allowfullscreen height="100%" src="https://streamable.com/e/wioxqn?autoplay=1&muted=1" width="100%" style="border:none; width:100%; height:100%; position:absolute; left:0px; top:0px; overflow:hidden;"></iframe></div>
+<iframe allow="fullscreen;autoplay" allowfullscreen height="100%" src="https://streamable.com/e/wioxqn?autoplay=1&muted=1" width="100%" style="border:none; width:100%; height:100%; position:absolute; left:0px; top:0px; overflow:hidden;"></iframe></div>
 
 ---
 
