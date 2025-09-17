@@ -17,7 +17,7 @@ This project uses **Google Cloud + Generative AI** to make contracts **easy-to-u
 ---
 
 ## 🎥 Demo Preview
-![ScreenShot 1](https://GitHub.com/jyrjanon/LegalEase_Ai/src1.png)
+![ScreenShot 1](https://github.com/jyrjanon/LegalEase_Ai/src1.png)
 ---
 
 ## ⚡ Features  
