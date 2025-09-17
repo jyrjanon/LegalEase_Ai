@@ -1,7 +1,3 @@
-<!-- Title with Animated Typing -->
-<h1 align="center">
-  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=28&duration=3000&pause=1000&color=00F7FF&center=true&vCenter=true&width=600&lines=📜+AI+Legal+Document+Demystifier;🚀+Simplify+Complex+Contracts;⚡+Chat+with+Your+Documents" alt="Typing SVG" />
-</h1>
 
 ---
 
@@ -18,6 +14,7 @@ This project uses **Google Cloud + Generative AI** to make contracts **easy-to-u
 
 ## 🎥 Demo Preview
 ![ScreenShot 1](https://github.com/jyrjanon/LegalEase_Ai/blob/main/src1.png)
+![ScreenShot 2](https://github.com/jyrjanon/LegalEase_Ai/blob/main/src2.png)
 ---
 
 ## ⚡ Features  
