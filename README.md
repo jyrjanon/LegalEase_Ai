@@ -5,10 +5,9 @@
 Legal documents are often full of jargon ⚖️.  
 This project uses **Google Cloud + Generative AI** to make contracts **easy-to-understand** in **simple English**.  
 
-✅ Upload or paste your legal document  
+✅ Upload [pdf/image/doc] or paste your legal document  
 ✅ Click **Analyze** → Get instant plain-language summary  
-✅ Ask questions in chat 💬 (like a lawyer sitting with you!)  
-✅ AI Advocate avatar 👨‍⚖️ responds in real-time  
+✅ Ask questions in chat 💬 (like a lawyer sitting with you!)   
 
 ---
 
